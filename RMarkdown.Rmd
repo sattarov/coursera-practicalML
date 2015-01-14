@@ -1,0 +1,122 @@
+---
+title: "Weight Lifting Exercises Dataset"
+author: "Timur Sattarov"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Vignette Title}
+  %\VignetteEngine{knitr::rmarkdown}
+  \usepackage[utf8]{inputenc}
+---
+
+The "caret" package was chosen to find an appropriate machine learning algorithm with an appropriate tuning parameters.
+
+```{r}
+library (caret)
+```
+
+As a first step was loading the dataset, removing the empty columns and columns with "NA" values.
+
+``` {r}
+pml_training = read.csv("pml-training.csv", header = T, na.string=c("","NA"));
+pml_testing = read.csv("pml-testing.csv", header = T, na.string=c("","NA"));
+
+pml_training = pml_training[ , ! apply( pml_training , 2 , function(x) any(is.na(x)) ) ]
+pml_testing = pml_testing[ , ! apply( pml_testing , 2 , function(x) any(is.na(x)) ) ]
+```
+
+As a next step some of the columns should be removed as well since they don't provide any information necessary for creating the classification model.
+
+```{r}
+pml_training = pml_training[,8:60]
+pml_testing = pml_testing[,8:59]
+```
+
+Before starting to build a classification model the training dataset was split into training and test sets, giving 75% of the samples to the training set and 25% to the test set.
+
+```{r}
+inTrain = createDataPartition(y=pml_training$classe, p=0.75, list=FALSE)
+training = pml_training[inTrain,]
+testing = pml_training[-inTrain,]
+```
+
+In addition dimensionality reduction was applied to the training dataset to see how the samples of different classes are distributed. For this Principal Component Analisys was applied and first two principal components were chosen to plot it in 2D.
+
+```{r}
+preProc = preProcess(training[,-53], method = "pca", pcaComp=2)
+training_preProcPCA = predict(preProc, training[,-53])
+plot(training_preProcPCA[,1], training_preProcPCA[,2], col=training$classe, xlab="PC_1",ylab="PC_2")
+```
+
+The plot shows that the samples are distributed in 5 clusters, however none of them has all the samples of one class. Each cluster has samples of different classes.
+
+Different kinds of machine learning algorithms were applied to build a suitable model with high accuracy level. The tuning of the models included different types of preprocessing such as: scaling, centering, PCA. In addition for each classification algorithm a variety of tuning parameters was applied, for example in Neural Network it's a number of hidden layers and a decay. Regarding the resampling methods preference was given mostly to k-fold cross validation  and bootstraping.
+Out of all applied algorithms "Random Forests" gave the highest accuracy value of 99.3%.
+
+```{r,eval=FALSE}
+trainControl = trainControl(method = "repeatedcv", number = 10, repeats = 3, verboseIter = T)
+modelFit = train(classe ~., data=training, method="rf",preProcess=c("scale","center"),
+trControl = trainControl)
+modelFit
+
+Random Forest 
+
+14718 samples
+   52 predictor
+    5 classes: 'A', 'B', 'C', 'D', 'E' 
+
+Pre-processing: scaled, centered 
+Resampling: Cross-Validated (10 fold, repeated 3 times) 
+
+Summary of sample sizes: 13247, 13246, 13247, 13246, 13248, 13245, ... 
+
+Resampling results across tuning parameters:
+
+  mtry  Accuracy   Kappa      Accuracy SD  Kappa SD   
+   2    0.9932963  0.9915197  0.002101237  0.002658269
+  27    0.9929112  0.9910328  0.002138901  0.002705497
+  52    0.9853696  0.9814918  0.002807063  0.003551657
+
+Accuracy was used to select the optimal model using  the largest value.
+The final value used for the model was mtry = 2. 
+```
+
+
+When the model was applied to the test dataset it made almost perfect classification. The statistics below shows it clearly.
+
+```{r,eval=FALSE}
+predictions = predict(modelFit, newdata = testing)
+confusionMatrix(predictions, testing$classe)
+
+Confusion Matrix and Statistics
+
+          Reference
+Prediction    A    B    C    D    E
+         A 1395    6    0    0    0
+         B    0  941    2    0    0
+         C    0    2  851    9    0
+         D    0    0    2  795    1
+         E    0    0    0    0  900
+
+Overall Statistics
+                                          
+               Accuracy : 0.9955          
+                 95% CI : (0.9932, 0.9972)
+    No Information Rate : 0.2845          
+    P-Value [Acc > NIR] : < 2.2e-16       
+                                          
+                  Kappa : 0.9943          
+ Mcnemar's Test P-Value : NA              
+
+Statistics by Class:
+
+                     Class: A Class: B Class: C Class: D Class: E
+Sensitivity            1.0000   0.9916   0.9953   0.9888   0.9989
+Specificity            0.9983   0.9995   0.9973   0.9993   1.0000
+Pos Pred Value         0.9957   0.9979   0.9872   0.9962   1.0000
+Neg Pred Value         1.0000   0.9980   0.9990   0.9978   0.9998
+Prevalence             0.2845   0.1935   0.1743   0.1639   0.1837
+Detection Rate         0.2845   0.1919   0.1735   0.1621   0.1835
+Detection Prevalence   0.2857   0.1923   0.1758   0.1627   0.1835
+Balanced Accuracy      0.9991   0.9955   0.9963   0.9940   0.9994
+```
